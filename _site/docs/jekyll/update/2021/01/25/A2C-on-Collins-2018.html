@@ -1,0 +1,210 @@
+<h1 id="test-a-meta-reinforcement-learning-model-a2c-on-an-associative-learning-task">Test a meta-reinforcement learning model (A2C) on an associative learning task</h1>
+
+<p>In this post, I want to explore the power of a simple meta-reinforcement learning (meta-RL) model on simple associative learning tasks. This is the second post on my journey to understand meta-RL models and hopefully tweak them to behave like humans; and you can check out my overall project proposal <a href="./2021-01-24-on-becoming-a-structured-model.markdown">here</a>. This post assumes that you have basic knowledge on reinforcement learning (RL), and there are plenty of good RL tutorials out there.</p>
+
+<h2 id="what-is-meta-reinforcement-learning">What is meta-reinforcement learning?</h2>
+
+<p>The term “meta” confused me for a long time, so let’s understand “meta-learning” in a clearer term: <strong>learning to learn</strong>. Imagine the traditional way we train a RL model to play the Pong game. For example, we can decide to pick the DQN algorithm, specify the number of layers and units in the Q-network, and finally choose our favorite loss function and optimizer. We may get lucky this time and the model plays Pong well, but this combination of choices may not work for the GO game, and we need to start from scratch and test numerous other algorithms. What if we can train a model to <em>learn the best learning algorithm for the task</em>? Wouldn’t it be wonderful if we have such a model that can figure out the best way to learn in the current task setting? This is the essence of meta-RL models: <strong>find the best learning aglorithm for the task with reinforcement learning</strong>.</p>
+
+<h2 id="why-should-we-test-the-model-on-associative-learning-tasks">Why should we test the model on associative learning tasks?</h2>
+
+<p>Associative learning tasks are pretty common in the cognitive science field but not so much in computer science, but in our context they are simple multi-armed bandit tasks. You might think that multi-armed bandit task is one of the most basic problems in RL and countless algorithms are already built to solve it near-optimally, why bother testing it? Well, here are several reasons:</p>
+
+<ol>
+  <li>
+    <p><em>Most of RL algorithms have built-in memory one way or another, but meta-RL algorithms don’t</em>. Traditional models keep information of rewarding state-action pairs in Q-tables or value networks, so the way they utilize these memory resources are designed by the human researchers. On the other hand, the learning algorithms learned by meta-RL models are complete black boxes; researchers only specifies the number of memory units that the learning algorithm can use, and how these memory units are used is totally up to the algorithm. **By testing the meta-RL algorithm on associative learning tasks, we hope to understand how they utilize the given memory resources.</p>
+  </li>
+  <li>
+    <p><em>While researchers can easily expand the memory resources in RL algorithms, you can’t do the same things to humans.</em> Humans have very limited memory resources, and their performance fell short even in simple associative learning tasks as the number of state-action pairs increases. However, humans seem to recognize this limit and they can act in a near-optimal fashion under this constraint. <strong>It is therefore intriguing to see whether the learning algorithm learned by the meta-RL model can show similar behavior under limited memory resources.</strong></p>
+  </li>
+</ol>
+
+<p>Let’s quickly go through the procedure of the associative learning task. As shown in Fig. 1, the model was trained on multiple associative learning blocks which have either 3 or 6 objects. At the start of each block, each object will be randomly associated with one of the three buttons. For each trial within each block, the model observes one stimulus (one-hot encoded in the experiment), presses one of the three action buttons, and finally gets feedback on whether the object-action pair is correct or not. I tried to replicate this procedure described in <a href="https://www.mitpressjournals.org/doi/10.1162/jocn_a_01238?url_ver=Z39.88-2003&amp;rfr_id=ori:rid:crossref.org&amp;rfr_dat=cr_pub%20%200pubmed">this paper</a> as they recruited human participants to do this exact same task, and this makes it possible to compare the behavior between humans and models.</p>
+
+<h2 id="the-associative-learning-task">The associative learning task</h2>
+
+<p><img src="images/Collins2018_task_fig.png" alt="" />
+Fig. 1. Experiment procedure of the associative learning task. Figure adapted from [1]</p>
+
+<p>Now it’s time to train some models!</p>
+
+<h3 id="first-lets-setup-the-environment">First, let’s setup the environment</h3>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="n">np</span>
+<span class="kn">import</span> <span class="nn">pandas</span> <span class="k">as</span> <span class="n">pd</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="n">plt</span>
+<span class="kn">import</span> <span class="nn">matplotlib</span> <span class="k">as</span> <span class="n">mpl</span>
+<span class="o">%</span><span class="n">matplotlib</span> <span class="n">inline</span>
+
+<span class="n">plt</span><span class="p">.</span><span class="n">style</span><span class="p">.</span><span class="n">use</span><span class="p">(</span><span class="s">'seaborn-dark-palette'</span><span class="p">)</span>
+<span class="n">mpl</span><span class="p">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s">'axes.titlesize'</span><span class="p">]</span> <span class="o">=</span> <span class="mi">20</span>
+</code></pre></div></div>
+
+<h3 id="second-lets-train-the-model">Second, let’s train the model</h3>
+
+<p>I trained an iconic meta-RL model, an A2C algorithm with 50 LSTM units, on 40 million trials. I compared the behavior between human participants and the trained meta-RL model.</p>
+
+<p>To examine how meta-RL models behave under limited memory resources, I trained another model with 20 LSTM units on 20M trials. Reducing the number of LSTM units is definitely a crude way to limit memory resources, but it does the work as a first step. I will explore various capacity-limited model variants (e.g. limit the mutual information between observation and action) in the future.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">envs.Collins2018</span> <span class="kn">import</span> <span class="n">Collins2018Task</span>
+<span class="kn">from</span> <span class="nn">utils.utils</span> <span class="kn">import</span> <span class="n">do_experiment</span>
+
+<span class="c1"># specify the agent and the environment
+</span><span class="n">num_lstm_units</span> <span class="o">=</span> <span class="mi">20</span>
+<span class="n">num_train_steps</span> <span class="o">=</span> <span class="mi">20_000_000</span>
+<span class="n">policy_kwargs</span> <span class="o">=</span> <span class="p">{</span><span class="s">'n_lstm'</span><span class="p">:</span> <span class="n">num_lstm_units</span><span class="p">,</span> <span class="s">'action_noise'</span><span class="p">:</span> <span class="mi">0</span><span class="p">}</span>
+<span class="n">env</span> <span class="o">=</span> <span class="n">Collins2018Task</span><span class="p">(</span><span class="n">num_objects</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">num_actions</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">num_repeats</span><span class="o">=</span><span class="mi">13</span><span class="p">)</span>
+
+<span class="n">do_experiment</span><span class="p">(</span><span class="n">env</span><span class="p">,</span> <span class="n">num_train_steps</span><span class="p">,</span> <span class="n">policy_kwargs</span><span class="p">)</span>
+</code></pre></div></div>
+
+<h3 id="finally-lets-use-the-learned-model-to-rollouts-some-new-blocks">Finally, let’s use the learned model to rollouts some new blocks.</h3>
+
+<p>To test whether the learned model can generalize to new tasks, we rollout the model on 600 new blocks where 1 to 6 objects are available. Note that this isn’t really testing whether the model can transfer knowledge from training tasks to new tasks: The model can probably solve 1 to 5-object blocks just like 6-object blocks where the remaining object are absent. It is still good to test whether the model can reach this level of generalization though.</p>
+
+<p>You might encounter tons of warnings if you are running this notebook. This is because I am using the A2C implementation from stable-baselines which uses tensorflow v1.</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">utils.utils</span> <span class="kn">import</span> <span class="n">Simulation</span>
+<span class="kn">from</span> <span class="nn">envs.GuessBoundary</span> <span class="kn">import</span> <span class="n">GuessBoundaryTask</span>
+<span class="kn">from</span> <span class="nn">envs.Collins2018</span> <span class="kn">import</span> <span class="n">Collins2018Task</span>
+
+<span class="n">env</span> <span class="o">=</span> <span class="n">Collins2018Task</span><span class="p">(</span><span class="n">num_objects</span><span class="o">=</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+<span class="n">sims</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">Simulation</span><span class="p">(</span><span class="s">'./outputs/Collins2018/A2C-LSTM50'</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">load_params_file_idx</span><span class="o">=</span><span class="mi">20_000_000</span><span class="p">),</span>
+    <span class="n">Simulation</span><span class="p">(</span><span class="s">'./outputs/Collins2018/A2C-LSTM50'</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">load_params_file_idx</span><span class="o">=</span><span class="mi">10_000_000</span><span class="p">),</span>
+    <span class="n">Simulation</span><span class="p">(</span><span class="s">'./outputs/Collins2018/A2C-LSTM20'</span><span class="p">,</span> <span class="n">env</span><span class="p">,</span> <span class="n">load_params_file_idx</span><span class="o">=</span><span class="mi">20_000_000</span><span class="p">)</span>
+<span class="p">]</span>
+
+<span class="k">for</span> <span class="n">sim</span> <span class="ow">in</span> <span class="n">sims</span><span class="p">:</span>
+    <span class="n">sim</span><span class="p">.</span><span class="n">evaluate</span><span class="p">(</span><span class="n">num_test_episodes</span><span class="o">=</span><span class="mi">600</span><span class="p">,</span> <span class="n">num_trials</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">verbose</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span>
+</code></pre></div></div>
+
+<h2 id="lets-check-the-models-training-progress">Let’s check the model’s training progress</h2>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">utils.visualization</span> <span class="kn">import</span> <span class="n">plot_training_progress</span>
+
+<span class="n">plot_training_progress</span><span class="p">(</span><span class="n">sims</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">model_path</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p><img src="images/fig_training_progress.jpg" alt="" width="300" /></p>
+
+<p>The model with 50 LSTM units probably reached performance plateau after 15 million trials of training.</p>
+
+<p>Let’s compare three models:</p>
+<ol>
+  <li>a 50-unit A2C model trained with 20M trials (possibly over-trained)</li>
+  <li>a 50-unit A2C model trained with 10M trials (possibly under-trained)</li>
+  <li>a 20-unit A2C model trained with 20M trials (possibly over-trained)</li>
+</ol>
+
+<h2 id="lets-compare-how-human-participants-score-against-the-meta-rl-model">Let’s compare how human participants score against the meta-RL model</h2>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kn">from</span> <span class="nn">utils.visualization</span> <span class="kn">import</span> <span class="n">plot_associative_learning_progress</span><span class="p">,</span> <span class="n">calc_exploration_and_retention</span>
+<span class="kn">from</span> <span class="nn">utils.utils</span> <span class="kn">import</span> <span class="n">behav2sim</span>
+
+<span class="n">df_behav</span> <span class="o">=</span> <span class="n">behav2sim</span><span class="p">()</span>
+<span class="n">dfs</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">df_behav</span><span class="p">,</span>
+    <span class="n">sims</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">rollouts</span><span class="p">,</span>
+    <span class="n">sims</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">rollouts</span><span class="p">,</span>
+    <span class="n">sims</span><span class="p">[</span><span class="mi">2</span><span class="p">].</span><span class="n">rollouts</span>
+<span class="p">]</span>
+<span class="n">mdl_names</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="s">'human behavior'</span><span class="p">,</span>
+    <span class="s">'LSTM50 / train20M'</span><span class="p">,</span>
+    <span class="s">'LSTM50 / train10M'</span><span class="p">,</span>
+    <span class="s">'LSTM20 / train20M'</span>
+<span class="p">]</span>
+
+<span class="n">fig</span><span class="p">,</span> <span class="n">axs</span> <span class="o">=</span> <span class="n">plt</span><span class="p">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">dfs</span><span class="p">),</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span>
+
+<span class="k">for</span> <span class="n">mdl</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dfs</span><span class="p">)):</span>
+    <span class="c1"># does the model learn after multiple stimulus presentations?
+</span>    <span class="n">plot_associative_learning_progress</span><span class="p">(</span><span class="n">axs</span><span class="p">[</span><span class="n">mdl</span><span class="p">],</span> <span class="n">dfs</span><span class="p">[</span><span class="n">mdl</span><span class="p">])</span>
+    <span class="n">axs</span><span class="p">[</span><span class="n">mdl</span><span class="p">].</span><span class="n">set_title</span><span class="p">(</span><span class="n">mdl_names</span><span class="p">[</span><span class="n">mdl</span><span class="p">])</span>
+    <span class="c1"># does the model learn to attempt different actions after failed trials (before the single success)? 
+</span>    <span class="c1">#calc_exploration_and_retention([axs[1, mdl], axs[2, mdl]], dfs[mdl])
+</span>    
+
+<span class="c1"># insight: network should be quite larger than the optimal size
+</span></code></pre></div></div>
+
+<p><img src="images/Fig2.png" alt="" /></p>
+
+<p>You can see how the human participants score against the three models.</p>
+
+<p>The main highlight here is that human participants did worse in the 6-object blocks than the 3-object blocks (leftmost figure). This is expected since humans typically can’t remember this many object-action pairs, so they need a bit of extra practice to reach the same level of performance. The over-trained model (second figure) doesn’t show this obvious trend, but the under-trained and memory-limited model shows similar trend.</p>
+
+<h3 id="now-lets-do-a-more-detailed-analysis-on-how-the-models-utilize-memory">Now let’s do a more detailed analysis on how the models utilize memory.</h3>
+
+<p>To examine that, we can check the following two aspects:</p>
+
+<ol>
+  <li>If the make a wrong action guess, it should try another action during the next encounter. Since there is only 3 action buttons, for each object the maximum number of failed attempts before the correct action is hit is at most 2. More than 3 failed attempts shows imperfect memory on the incorrect action attempts.</li>
+  <li>After the correct action is selected, the model should stick to this action for the rest of the block. Failure to do so shows imperfect memory on the correct action attempts.</li>
+</ol>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">fig</span><span class="p">,</span> <span class="n">axs</span> <span class="o">=</span> <span class="n">plt</span><span class="p">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">dfs</span><span class="p">),</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+<span class="n">axs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">].</span><span class="n">set_title</span><span class="p">(</span><span class="s">'human behavior'</span><span class="p">)</span>
+<span class="n">axs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">].</span><span class="n">set_title</span><span class="p">(</span><span class="s">'LSTM50 / train20M'</span><span class="p">)</span>
+<span class="n">axs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">].</span><span class="n">set_title</span><span class="p">(</span><span class="s">'LSTM50 / train10M'</span><span class="p">)</span>
+<span class="n">axs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">3</span><span class="p">].</span><span class="n">set_title</span><span class="p">(</span><span class="s">'LSTM20 / train20M'</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">mdl</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dfs</span><span class="p">)):</span>
+    <span class="c1"># does the model learn to attempt different actions after failed trials (before the single success)? 
+</span>    <span class="n">calc_exploration_and_retention</span><span class="p">([</span><span class="n">axs</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">mdl</span><span class="p">],</span> <span class="n">axs</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="n">mdl</span><span class="p">]],</span> <span class="n">dfs</span><span class="p">[</span><span class="n">mdl</span><span class="p">])</span>
+ 
+</code></pre></div></div>
+
+<p><img src="images/Fig3.png" alt="" /></p>
+
+<p>The top row shows the distribution of number of failed attempts before the correct action is found. We can easily observe that humans occasionally forget the incorrect actions they have picked in the previous trials. The models, especially the over-trained one, <em>show almost perfect memory on previous incorrect attempts</em>.</p>
+
+<p>The bottom row shows the distribution of average reward after the correct action is found. All the points should be at 1.0 if the model can remember the correct action perfectly. We can see that the over-trained model is nearly perfect, and humans again show some level of imperfect memory.</p>
+
+<p>Note the small bump at 0 in the bottom right graph. What does this mean? This means that the trained model has a noticeable chance to completely forget the answer for an object. This shows that the model fails to consistently utilize its memory resources. More training can certainly solve the problem, but this might mean the models are using memory in a fundamentally different way as humans do.</p>
+
+<h3 id="are-there-more-artifacts-unique-to-the-models">Are there more artifacts unique to the models?</h3>
+
+<p>You bet. Since the objects are coded 0-2 and 0-5 in the 3- and 6-object tasks respectively, the model may be trained more on the first three objects and less the last three. On the other hand, humans subjects might show similar trends since their working memory is already pre-occupied by earlier objects, but the effect shouldn’t but huge.</p>
+
+<p>Here is the comparison between the human behavior and the model:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># is there training artifact that the stimulus 0-2 are better trained?
+# Ans: yes
+</span><span class="n">fig</span><span class="p">,</span> <span class="n">axs</span> <span class="o">=</span> <span class="n">plt</span><span class="p">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">dfs</span><span class="p">),</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">16</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+<span class="k">for</span> <span class="n">mdl</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">dfs</span><span class="p">)):</span>
+    <span class="n">obj_rewards</span> <span class="o">=</span> <span class="n">dfs</span><span class="p">[</span><span class="n">mdl</span><span class="p">].</span><span class="n">groupby</span><span class="p">(</span><span class="s">'observations'</span><span class="p">).</span><span class="n">rewards</span><span class="p">.</span><span class="n">mean</span><span class="p">().</span><span class="n">tolist</span><span class="p">()</span>
+    <span class="n">axs</span><span class="p">[</span><span class="n">mdl</span><span class="p">].</span><span class="n">bar</span><span class="p">(</span><span class="n">np</span><span class="p">.</span><span class="n">arange</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">obj_rewards</span><span class="p">)),</span> <span class="n">obj_rewards</span><span class="p">)</span>
+    <span class="n">axs</span><span class="p">[</span><span class="n">mdl</span><span class="p">].</span><span class="n">set_title</span><span class="p">(</span><span class="n">mdl_names</span><span class="p">[</span><span class="n">mdl</span><span class="p">])</span>
+    <span class="n">axs</span><span class="p">[</span><span class="n">mdl</span><span class="p">].</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s">'Object ID'</span><span class="p">)</span>
+    <span class="n">axs</span><span class="p">[</span><span class="n">mdl</span><span class="p">].</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s">'Mean Reward'</span><span class="p">)</span>
+    <span class="n">axs</span><span class="p">[</span><span class="n">mdl</span><span class="p">].</span><span class="n">set_ylim</span><span class="p">([</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+</code></pre></div></div>
+
+<p><img src="images/Fig4.png" alt="" /></p>
+
+<p>Hmm, that is messy. As expected, humans are pretty consistent across different objects; as long as a red circle looks different from a green one, we should have no trouble associating them with different actions. For the under-trained and the memory-limited models we can see a drop for the last three objects, probably because they received 50% less training. The third object in the over-trained model oddly shows lower performance, and I haven’t figured out why yet.</p>
+
+<p>Nevertheless, one thing is for sure: <strong>while humans can easily identify that the same rule can be applied to all objects regardless of how many they are, models probably learn the rule of each object independently.</strong> This partially explains why it takes 20 million trials to train a meta-RL model to learn such a simple associative learning task. This is one of the advantages of graph neural networks (GNNs) over plain LSTM units: if the memory resources given to a meta-RL model is a graph instead of a fixed-sized network, the model may opt to create a memory node for each object it encounters and learn a single operation that applies to all nodes. The latter usage of memory is much closer to humans and it needs way fewer parameters. In the next post, I will explore how such networks can be implemented and how they behave on this associative learning task.</p>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>In this post, I examined how a meta-RL model utilizes its memory resources and compared it to human behavior. I trained multiple models on a simple associative learning task and found that while models often memorize important information better than humans do, they require a huge amount of training data and they tend to learn the rule for each object independently. In the future posts, I will explore how to enforce stronger inductive biases into a meta-RL model and force it to learn in a human-like manner.</p>
+
+<p>This is only a work in progress and there are still quite a lot of TODOs to clean up:</p>
+
+<ol>
+  <li>
+    <p>While behaviors can tell us a lot about how models utilize memory, it is even better if we can directly infer what is stored inside the LSTM hidden units. One way to do this is to correlate task-relevant information (e.g. which objects are already associated with action buttons) through multiple blocks with the hidden state values. This yields mixed results in my previous attempts, but I think this might be worth a shot.</p>
+  </li>
+  <li>
+    <p>Limiting the memory resources of a model by reducing the number of LSTM units is definitely a crude approach, and there are more elegant information-theoretic approaches that I have yet explored. A meta-RL model can be interpreted as a capacity-limited channel that maps observations to actions, and this capacity can be tuned by limited the mutual information between the model input and output. It will be interesting to see whether enforcing such mutual information constraints can make the meta-RL model behave more like humans.</p>
+  </li>
+</ol>
+
+<h2 id="references">References:</h2>
+
+<p>1.Collins AGE. The Tortoise and the Hare: Interactions between Reinforcement Learning and Working Memory. J Cogn Neurosci. 2018 Oct;30(10):1422-1432. doi: 10.1162/jocn_a_01238. Epub 2018 Jan 18. PMID: 29346018.</p>
